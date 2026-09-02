@@ -107,6 +107,7 @@ constexpr int AHARDWAREBUFFER_FORMAT_R8G8B8_UNORM    = 3;
 constexpr int AHARDWAREBUFFER_FORMAT_R5G6B5_UNORM    = 4;
 constexpr int AHARDWAREBUFFER_FORMAT_R16_UINT        = 0x39;
 constexpr int AHARDWAREBUFFER_FORMAT_R16G16_UINT     = 0x3a;
+constexpr int AHARDWAREBUFFER_FORMAT_R10G10B10A10_UNORM = 0x3b;
 constexpr int AHARDWAREBUFFER_FORMAT_D24_UNORM       = 0x31;
 constexpr int AHARDWAREBUFFER_FORMAT_Y8Cr8Cb8_420_SP = 0x11;
 constexpr int AHARDWAREBUFFER_FORMAT_Y8Cb8Cr8_420    = 0x23;
@@ -1991,6 +1992,9 @@ class ImageTestES31 : public ImageTest
 class ImageTestRGB565ES3 : public ImageTestES3
 {};
 
+class ImageTestSampleOnlyES3 : public ImageTestES3
+{};
+
 // Tests that the extension is exposed on the platforms we think it should be. Please modify this as
 // you change extension availability.
 TEST_P(ImageTest, ANGLEExtensionAvailability)
@@ -3183,6 +3187,35 @@ TEST_P(ImageTestRGB565ES3, SourceAHBTarget2DDrawAndUploadByteData)
     EXPECT_PIXEL_RECT_EQ(0, 0, kWidth / 2, kHeight / 2, GLColor::yellow);
     EXPECT_PIXEL_RECT_EQ(0, kHeight / 2, kWidth / 2, kHeight / 2, GLColor::blue);
     EXPECT_PIXEL_RECT_EQ(kWidth / 2, 0, kWidth / 2, kHeight, GLColor::blue);
+
+    // Clean up.
+    eglDestroyImageKHR(window->getDisplay(), image);
+    destroyAndroidHardwareBuffer(source);
+}
+
+// Test that importing a sample-only (non-renderable) AHB works.
+TEST_P(ImageTestSampleOnlyES3, SourceAHBTarget2DSampleOnly)
+{
+    EGLWindow *window = getEGLWindow();
+
+    ANGLE_SKIP_TEST_IF(!hasOESExt() || !hasBaseExt() || !has2DTextureExt());
+    ANGLE_SKIP_TEST_IF(!hasAndroidImageNativeBufferExt() || !hasAndroidHardwareBufferSupport());
+
+    AHardwareBuffer *source;
+    EGLImageKHR image;
+    createEGLImageAndroidHardwareBufferSource(1, 1, 1, AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM,
+                                              kAHBUsageGPUSampledImage, kDefaultAttribs,
+                                              {{kLinearColor, 4}}, &source, &image);
+    EXPECT_NE(image, EGL_NO_IMAGE_KHR);
+
+    // Create a texture target to bind the egl image.
+    GLTexture target;
+    createEGLImageTargetTexture2D(image, target);
+    EXPECT_GL_NO_ERROR();
+
+    // Verify results.
+    verifyResults2D(target, kLinearColor);
+    EXPECT_GL_NO_ERROR();
 
     // Clean up.
     eglDestroyImageKHR(window->getDisplay(), image);
@@ -5299,6 +5332,65 @@ TEST_P(ImageTestES3, SourceYUVAHBTargetExternalCopySrc)
     EXPECT_PIXEL_COLOR_NEAR(1, 0, GLColor(143, 0, 41, 255), 2);
     EXPECT_PIXEL_COLOR_NEAR(0, 1, GLColor(255, 159, 211, 255), 2);
     EXPECT_PIXEL_COLOR_NEAR(1, 1, GLColor(255, 198, 250, 255), 2);
+    ASSERT_GL_NO_ERROR();
+
+    // Clean up
+    eglDestroyImageKHR(window->getDisplay(), image);
+    destroyAndroidHardwareBuffer(source);
+}
+
+// Test using glCopySubTextureCHROMIUM with R10X6G10X6B10X6A10X6 as the source
+TEST_P(ImageTestES3, SourceR10X6G10X6B10X6A10X6AHBTargetExternalCopySrc)
+{
+    EGLWindow *window = getEGLWindow();
+
+    ANGLE_SKIP_TEST_IF(!hasOESExt() || !hasBaseExt() || !has2DTextureExt());
+    ANGLE_SKIP_TEST_IF(!hasAndroidImageNativeBufferExt() || !hasAndroidHardwareBufferSupport());
+    ANGLE_SKIP_TEST_IF(!IsGLExtensionEnabled("GL_CHROMIUM_copy_texture"));
+
+    // Sampled bit is excluded to avoid using drawing instead of the copy path.
+    constexpr size_t kWidth  = 256;
+    constexpr size_t kHeight = 256;
+    ANGLE_SKIP_TEST_IF(!isAndroidHardwareBufferConfigurationSupported(
+        kWidth, kHeight, 1, AHARDWAREBUFFER_FORMAT_R10G10B10A10_UNORM, kAHBUsageGPUFramebuffer));
+
+    // Initialize R10X6G10X6B10X6A10X6 data (8 bytes).
+    std::vector<uint16_t> srcData(kWidth * kHeight * 4, 0);
+    for (size_t i = 0; i < kHeight; i++)
+    {
+        srcData[i * kWidth + 0] = 0xFFC0;
+        srcData[i * kWidth + 1] = 0;
+        srcData[i * kWidth + 2] = 0xFFC0;
+        srcData[i * kWidth + 3] = 0xFFC0;
+    }
+
+    // Create the image
+    AHardwareBuffer *source;
+    EGLImageKHR image;
+    createEGLImageAndroidHardwareBufferSource(
+        kWidth, kHeight, 1, AHARDWAREBUFFER_FORMAT_R10G10B10A10_UNORM, kAHBUsageGPUFramebuffer,
+        kDefaultAttribs, {{reinterpret_cast<const GLubyte *>(srcData.data()), 8}}, &source, &image);
+    ASSERT_NE(image, EGL_NO_IMAGE_KHR);
+
+    // Create a texture target to bind the egl image
+    GLTexture srcTex;
+    createEGLImageTargetTexture2D(image, srcTex);
+
+    // Create a texture to be the destination of copy
+    GLTexture dstTex;
+    glBindTexture(GL_TEXTURE_2D, dstTex);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, kWidth, kHeight);
+    glCopySubTextureCHROMIUM(srcTex, 0, GL_TEXTURE_2D, dstTex, 0, 0, 0, 0, 0, kWidth, kHeight,
+                             GL_FALSE, GL_FALSE, GL_FALSE);
+    ASSERT_GL_NO_ERROR();
+
+    // Verify the results
+    GLFramebuffer fbo;
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, dstTex, 0);
+    EXPECT_GL_FRAMEBUFFER_COMPLETE(GL_FRAMEBUFFER);
+
+    EXPECT_PIXEL_RECT_EQ(0, 0, 1, kHeight, GLColor::magenta);
     ASSERT_GL_NO_ERROR();
 
     // Clean up
@@ -15415,4 +15507,10 @@ GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(ImageTestRGB565ES3);
 ANGLE_INSTANTIATE_TEST_ES3_AND(ImageTestRGB565ES3,
                                ES3_VULKAN().enable(Feature::AllocateNonZeroMemory),
                                ES3_VULKAN().enable(Feature::PreferBGR565ToRGB565));
+
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(ImageTestSampleOnlyES3);
+ANGLE_INSTANTIATE_TEST_ES3_AND(ImageTestSampleOnlyES3,
+                               ES3_VULKAN().enable(Feature::AllocateNonZeroMemory),
+                               ES3_VULKAN().enable(Feature::PreferBGR565ToRGB565),
+                               ES3_VULKAN().enable(Feature::ForceRenderableFallbackFormat));
 }  // namespace angle

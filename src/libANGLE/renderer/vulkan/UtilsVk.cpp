@@ -2120,7 +2120,7 @@ angle::Result UtilsVk::convertIndexBuffer(ContextVk *contextVk,
     writeInfo.descriptorType       = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writeInfo.pBufferInfo          = buffers.data();
 
-    vkUpdateDescriptorSets(contextVk->getDevice(), 1, &writeInfo, 0, nullptr);
+    VK_CALL(vkUpdateDescriptorSets, contextVk->getDevice(), 1, &writeInfo, 0, nullptr);
 
     ConvertIndexShaderParams shaderParams = {params.srcOffset, params.dstOffset >> 2,
                                              params.maxIndex, 0};
@@ -2189,7 +2189,7 @@ angle::Result UtilsVk::convertIndexIndirectBuffer(ContextVk *contextVk,
     writeInfo.descriptorType       = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writeInfo.pBufferInfo          = buffers.data();
 
-    vkUpdateDescriptorSets(contextVk->getDevice(), 1, &writeInfo, 0, nullptr);
+    VK_CALL(vkUpdateDescriptorSets, contextVk->getDevice(), 1, &writeInfo, 0, nullptr);
 
     ConvertIndexIndirectShaderParams shaderParams = {
         params.srcIndirectBufOffset >> 2, params.srcIndexBufOffset, params.dstIndexBufOffset >> 2,
@@ -2263,7 +2263,7 @@ angle::Result UtilsVk::convertLineLoopIndexIndirectBuffer(
     writeInfo.descriptorType       = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writeInfo.pBufferInfo          = buffers.data();
 
-    vkUpdateDescriptorSets(contextVk->getDevice(), 1, &writeInfo, 0, nullptr);
+    VK_CALL(vkUpdateDescriptorSets, contextVk->getDevice(), 1, &writeInfo, 0, nullptr);
 
     ConvertIndexIndirectLineLoopShaderParams shaderParams = {
         params.indirectBufferOffset >> 2, params.dstIndirectBufferOffset >> 2,
@@ -2326,7 +2326,7 @@ angle::Result UtilsVk::convertLineLoopArrayIndirectBuffer(
     writeInfo.descriptorType       = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writeInfo.pBufferInfo          = buffers.data();
 
-    vkUpdateDescriptorSets(contextVk->getDevice(), 1, &writeInfo, 0, nullptr);
+    VK_CALL(vkUpdateDescriptorSets, contextVk->getDevice(), 1, &writeInfo, 0, nullptr);
 
     ConvertIndirectLineLoopShaderParams shaderParams = {params.indirectBufferOffset >> 2,
                                                         params.dstIndirectBufferOffset >> 2,
@@ -2575,7 +2575,7 @@ angle::Result UtilsVk::convertVertexBufferImpl(
     writeInfo.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writeInfo.pBufferInfo     = buffers;
 
-    vkUpdateDescriptorSets(contextVk->getDevice(), 1, &writeInfo, 0, nullptr);
+    VK_CALL(vkUpdateDescriptorSets, contextVk->getDevice(), 1, &writeInfo, 0, nullptr);
 
     vk::ShaderModulePtr shader;
     ANGLE_TRY(contextVk->getShaderLibrary().getConvertVertex_comp(contextVk, flags, &shader));
@@ -3130,9 +3130,11 @@ angle::Result UtilsVk::setupBlitResolveGraphicsProgram(ContextVk *contextVk,
     uint32_t writeInfoOffset = blitDepth || blitColor ? 0 : 1;
     uint32_t writeInfoCount  = blitColor + blitDepth + blitStencil;
 
-    vkUpdateDescriptorSets(contextVk->getDevice(), writeInfoCount,
-                           ANGLE_UNSAFE_TODO(writeInfos + writeInfoOffset), 0, nullptr);
-    vkUpdateDescriptorSets(contextVk->getDevice(), 1, &writeInfos[2], 0, nullptr);
+    VK_CALL_WITH_GROUP(
+        GetPerfCounterGroup(vk::VulkanApiFunction::vkUpdateDescriptorSets),
+        (vkUpdateDescriptorSets(contextVk->getDevice(), writeInfoCount,
+                                ANGLE_UNSAFE_TODO(writeInfos + writeInfoOffset), 0, nullptr),
+         vkUpdateDescriptorSets(contextVk->getDevice(), 1, &writeInfos[2], 0, nullptr)));
 
     vk::ShaderLibrary &shaderLibrary                 = contextVk->getShaderLibrary();
     vk::ShaderModulePtr vertexShader;
@@ -3629,7 +3631,7 @@ angle::Result UtilsVk::stencilBlitResolveNoShaderExport(ContextVk *contextVk,
     writeInfos[2].descriptorType  = VK_DESCRIPTOR_TYPE_SAMPLER;
     writeInfos[2].pImageInfo      = &samplerInfo;
 
-    vkUpdateDescriptorSets(contextVk->getDevice(), 3, writeInfos, 0, nullptr);
+    VK_CALL(vkUpdateDescriptorSets, contextVk->getDevice(), 3, writeInfos, 0, nullptr);
 
     vk::ShaderModulePtr shader;
     ANGLE_TRY(contextVk->getShaderLibrary().getBlitResolveStencilNoExport_comp(contextVk, flags,
@@ -3938,7 +3940,7 @@ angle::Result UtilsVk::copyImage(ContextVk *contextVk,
         isYUV ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     writeInfo.pImageInfo = &imageInfo;
 
-    vkUpdateDescriptorSets(contextVk->getDevice(), 1, &writeInfo, 0, nullptr);
+    VK_CALL(vkUpdateDescriptorSets, contextVk->getDevice(), 1, &writeInfo, 0, nullptr);
 
     vk::ShaderLibrary &shaderLibrary                 = contextVk->getShaderLibrary();
     vk::ShaderModulePtr vertexShader;
@@ -4332,7 +4334,7 @@ angle::Result UtilsVk::copyImageToBuffer(ContextVk *contextVk,
     writeInfo[1].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writeInfo[1].pBufferInfo     = &bufferInfo;
 
-    vkUpdateDescriptorSets(contextVk->getDevice(), 2, writeInfo, 0, nullptr);
+    VK_CALL(vkUpdateDescriptorSets, contextVk->getDevice(), 2, writeInfo, 0, nullptr);
 
     vk::ShaderModulePtr shader;
     ANGLE_TRY(contextVk->getShaderLibrary().getCopyImageToBuffer_comp(contextVk, flags, &shader));
@@ -4536,7 +4538,7 @@ angle::Result UtilsVk::transCodeEtcToBc(ContextVk *contextVk,
                                         &descriptorSet));
         writeDescriptorSet[0].dstSet = descriptorSet;
         writeDescriptorSet[1].dstSet = descriptorSet;
-        vkUpdateDescriptorSets(contextVk->getDevice(), 2, writeDescriptorSet, 0, nullptr);
+        VK_CALL(vkUpdateDescriptorSets, contextVk->getDevice(), 2, writeDescriptorSet, 0, nullptr);
 
         ANGLE_UNSAFE_TODO(ANGLE_TRY(setupComputeProgram(
             contextVk, Function::TransCodeEtcToBc, shader, &mEtcToBc[flags], descriptorSet,
@@ -4616,7 +4618,7 @@ angle::Result UtilsVk::generateMipmap(ContextVk *contextVk,
     writeInfos[1].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writeInfos[1].pImageInfo      = &srcImageInfo;
 
-    vkUpdateDescriptorSets(contextVk->getDevice(), 2, writeInfos, 0, nullptr);
+    VK_CALL(vkUpdateDescriptorSets, contextVk->getDevice(), 2, writeInfos, 0, nullptr);
 
     vk::ShaderModulePtr shader;
     ANGLE_TRY(contextVk->getShaderLibrary().getGenerateMipmap_comp(contextVk, flags, &shader));
@@ -4808,7 +4810,7 @@ angle::Result UtilsVk::generateMipmapWithDraw(ContextVk *contextVk,
             writeInfos[0].dstSet = descriptorSet;
             writeInfos[1].dstSet = descriptorSet;
             imageInfos.imageView = srcImageView.getHandle();
-            vkUpdateDescriptorSets(contextVk->getDevice(), 2, writeInfos, 0, nullptr);
+            VK_CALL(vkUpdateDescriptorSets, contextVk->getDevice(), 2, writeInfos, 0, nullptr);
 
             // Update layer index and create pipeline
             shaderParams.srcLayer = currentLayer.get();
@@ -5006,7 +5008,7 @@ angle::Result UtilsVk::unresolve(ContextVk *contextVk,
         writeInfo.descriptorType       = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
         writeInfo.pImageInfo           = inputImageInfo.data();
 
-        vkUpdateDescriptorSets(contextVk->getDevice(), 1, &writeInfo, 0, nullptr);
+        VK_CALL(vkUpdateDescriptorSets, contextVk->getDevice(), 1, &writeInfo, 0, nullptr);
 
         gl::DrawBuffersArray<UnresolveColorAttachmentType> colorAttachmentTypes;
         uint32_t flags = GetUnresolveFlags(colorAttachmentCount, colorSrc, params.unresolveDepth,
@@ -5084,7 +5086,7 @@ angle::Result UtilsVk::unresolve(ContextVk *contextVk,
         stencilWriteInfo.descriptorType       = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
         stencilWriteInfo.pImageInfo           = &stencilImageInfo;
 
-        vkUpdateDescriptorSets(contextVk->getDevice(), 1, &stencilWriteInfo, 0, nullptr);
+        VK_CALL(vkUpdateDescriptorSets, contextVk->getDevice(), 1, &stencilWriteInfo, 0, nullptr);
 
         ANGLE_TRY(setupGraphicsProgram(contextVk, Function::ExportStencil, vertexShader,
                                        exportStencilShader, &mExportStencil, &pipelineDesc,
@@ -5172,7 +5174,7 @@ angle::Result UtilsVk::generateFragmentShadingRate(
     writeInfos[0].descriptorType       = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writeInfos[0].pImageInfo           = &destShadingRateImage;
 
-    vkUpdateDescriptorSets(contextVk->getDevice(), 1, writeInfos, 0, nullptr);
+    VK_CALL(vkUpdateDescriptorSets, contextVk->getDevice(), 1, writeInfos, 0, nullptr);
 
     vk::ShaderModulePtr computeShader;
     ANGLE_TRY(contextVk->getShaderLibrary().getGenerateFragmentShadingRate_comp(contextVk, 0,

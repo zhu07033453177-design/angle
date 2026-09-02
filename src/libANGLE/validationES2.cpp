@@ -12,6 +12,7 @@
 
 #include "libANGLE/validationES2_autogen.h"
 
+#include <array>
 #include <cstdint>
 
 #include "common/BinaryStream.h"
@@ -1963,7 +1964,7 @@ bool ValidateCompressedTexImage(const Context *context,
             return false;
         }
 
-        if (context->isWebGL() || context->isHardenedContext())
+        if (context->isHardenedContext())
         {
             if (ANGLE_UNLIKELY(pixelUnpackBuffer->hasTFBBindingConflict()))
             {
@@ -2219,7 +2220,7 @@ bool ValidateCompressedTexSubImage(const Context *context,
             return false;
         }
 
-        if (context->isWebGL() || context->isHardenedContext())
+        if (context->isHardenedContext())
         {
             if (ANGLE_UNLIKELY(pixelUnpackBuffer->hasTFBBindingConflict()))
             {
@@ -2977,8 +2978,9 @@ bool ValidateBlitFramebufferANGLE(const Context *context,
         }
     }
 
-    GLenum masks[]       = {GL_DEPTH_BUFFER_BIT, GL_STENCIL_BUFFER_BIT};
-    GLenum attachments[] = {GL_DEPTH_ATTACHMENT, GL_STENCIL_ATTACHMENT};
+    static constexpr std::array<GLenum, 2> masks = {GL_DEPTH_BUFFER_BIT, GL_STENCIL_BUFFER_BIT};
+    static constexpr std::array<GLenum, 2> attachments = {GL_DEPTH_ATTACHMENT,
+                                                          GL_STENCIL_ATTACHMENT};
     for (size_t i = 0; i < 2; i++)
     {
         if (mask & masks[i])
@@ -3441,7 +3443,7 @@ bool ValidateMapBufferBase(const Context *context,
         }
     }
 
-    if (context->isWebGL() || context->isHardenedContext())
+    if (context->isHardenedContext())
     {
         if (buffer->hasTFBBindingConflict())
         {
@@ -3966,7 +3968,7 @@ bool ValidateBufferData(const Context *context,
     }
 
     // Do some additional WebGL-specific validation
-    if (ANGLE_UNLIKELY(context->isWebGL() || context->isHardenedContext()))
+    if (ANGLE_UNLIKELY(context->isHardenedContext()))
     {
         if (buffer->hasTFBBindingConflict())
         {
@@ -4038,7 +4040,7 @@ bool ValidateBufferSubData(const Context *context,
     }
 
     // Do some additional WebGL-specific validation
-    if (ANGLE_UNLIKELY(context->isWebGL() || context->isHardenedContext()))
+    if (ANGLE_UNLIKELY(context->isHardenedContext()))
     {
         if (buffer->hasTFBBindingConflict())
         {

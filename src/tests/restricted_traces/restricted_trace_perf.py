@@ -244,7 +244,7 @@ def run_from_dir(dir):
         os.chdir(cwd)
 
 
-def run_trace(trace, args, screenshot_device_dir):
+def run_trace(trace, args, screenshot_device_dir, extra_args):
     mode = get_mode(args)
 
     # Kick off a subprocess that collects peak gpu memory periodically
@@ -265,27 +265,17 @@ def run_trace(trace, args, screenshot_device_dir):
         flags.append('--' + mode)
     if args.maxsteps != '':
         flags += ['--max-steps-performed', args.maxsteps]
-    if args.run_to_key_frame:
-        flags.append('--run-to-key-frame')
     if args.fixedtime != '':
         flags += ['--fixed-test-time-with-warmup', args.fixedtime]
     if args.minimizegpuwork:
         flags.append('--minimize-gpu-work')
-    if args.skip_blit_in_offscreen:
-        flags.append('--skip-blit-in-offscreen')
     if screenshot_device_dir != None:
         flags += ['--screenshot-dir', screenshot_device_dir]
     if args.screenshot_frame != '':
         flags += ['--screenshot-frame', args.screenshot_frame]
-    if args.fps_limit != '':
-        flags += ['--fps-limit', args.fps_limit]
-    if args.fps_limit_uses_busy_wait:
-        flags.append('--fps-limit-uses-busy-wait')
     if args.gpu_time:
         # Keep internal argument name the same for compatibility with the C++ executable
         flags.append('--track-gpu-time')
-    if args.add_swap_into_gpu_time:
-        flags.append('--add-swap-into-gpu-time')
     if args.frame_wall_time:
         flags.append('--track-frame-wall-time')
     if args.add_swap_into_frame_wall_time:
@@ -294,6 +284,14 @@ def run_trace(trace, args, screenshot_device_dir):
         else:
             print("WARNING: '--add-swap-into-frame-wall-time' requires `--frame-wall-time`. "
                   "Ignoring...\n")
+    if args.vulkan_api_wall_time:
+        if args.frame_wall_time:
+            flags.append('--track-vulkan-api-wall-time 1')
+        else:
+            print("WARNING: '--vulkan-api-wall-time' requires `--frame-wall-time`. Ignoring...\n")
+
+    # Pass through any unrecognized args directly to the test executable
+    flags += extra_args
 
     # Build a command that can be run directly over ADB, for example:
     r'''
@@ -480,6 +478,22 @@ def get_frame_wall_time():
             break
 
     return frame_wall_time
+
+
+def get_vk_api_wall_time():
+    # Pull the results from the device and parse
+    result = run_adb_shell_command_with_run_as('cat ' + _global.storage_dir + '/out.txt')
+    vk_api_wall_time = '0'
+
+    for line in result.splitlines():
+        # Look for "vk_api_wall_time" in the line and grab the second to last entry:
+        logging.debug('Checking line: %s' % line)
+
+        if "vk_api_wall_time" in line:
+            vk_api_wall_time = line.split()[-2]
+            break
+
+    return vk_api_wall_time
 
 
 def get_cpu_time():
@@ -920,7 +934,8 @@ def get_raw_data_name(args):
     else:
         return ''
 
-def run_traces(args):
+
+def run_traces(args, extra_args):
     # Load trace names
     test_json = os.path.join(args.build_dir, 'gen/trace_list.json')
     with open(os.path.join(DEFAULT_TEST_DIR, test_json)) as f:
@@ -963,6 +978,7 @@ def run_traces(args):
         'wall_time': 15,
         'gpu_time': 15,
         'frame_wall_time': 15,
+        'vk_api_wall_time': 16,
         'cpu_time': 15,
         'gpu_power': 10,
         'cpu_power': 10,
@@ -984,6 +1000,7 @@ def run_traces(args):
         'wall_time': 'wall_time(ms)',
         'gpu_time': 'gpu_time(ms)',
         'frame_wall_time': 'frame_wall_time(ms)',
+        'vk_api_wall_time': 'vk_api_wall_time(ms)',
         'cpu_time': 'cpu_time(ms)',
         'gpu_power': 'gpu_power(W)',
         'cpu_power': 'cpu_power(W)',
@@ -1010,6 +1027,8 @@ def run_traces(args):
             output_columns.append('gpu_time')
         if args.frame_wall_time:
             output_columns.append('frame_wall_time')
+            if args.vulkan_api_wall_time:
+                output_columns.append('vk_api_wall_time')
 
         output_columns.append('cpu_time')
 
@@ -1026,10 +1045,10 @@ def run_traces(args):
     else:
         # Output all columns when minimal-output is not requested
         output_columns.extend([
-            'wall_time', 'gpu_time', 'frame_wall_time', 'cpu_time', 'gpu_power', 'cpu_power',
-            'infra_power', 'gpu_mem_sustained', 'gpu_mem_peak', 'proc_mem_median', 'proc_mem_peak',
-            'process_cpuinst', 'gfxlib_cpuinst', 'angle_cpuinst', 'vulkan_cpuinst', 'gles_cpuinst',
-            'libc_cpuinst'
+            'wall_time', 'gpu_time', 'frame_wall_time', 'vk_api_wall_time', 'cpu_time',
+            'gpu_power', 'cpu_power', 'infra_power', 'gpu_mem_sustained', 'gpu_mem_peak',
+            'proc_mem_median', 'proc_mem_peak', 'process_cpuinst', 'gfxlib_cpuinst',
+            'angle_cpuinst', 'vulkan_cpuinst', 'gles_cpuinst', 'libc_cpuinst'
         ])
 
     # Format string that easily sizes itself to the dynamically loaded variables
@@ -1058,6 +1077,7 @@ def run_traces(args):
     wall_times = defaultdict(dict)
     gpu_times = defaultdict(dict)
     frame_wall_times = defaultdict(dict)
+    vk_api_wall_times = defaultdict(dict)
     cpu_times = defaultdict(dict)
     gpu_powers = defaultdict(dict)
     cpu_powers = defaultdict(dict)
@@ -1093,6 +1113,7 @@ def run_traces(args):
         wall_times.clear()
         gpu_times.clear()
         frame_wall_times.clear()
+        vk_api_wall_times.clear()
         cpu_times.clear()
         gpu_powers.clear()
         cpu_powers.clear()
@@ -1190,7 +1211,7 @@ def run_traces(args):
                         screenshot_device_dir = temp_dir
 
                     logging.debug('Running %s' % test)
-                    test_time = run_trace(test, args, screenshot_device_dir)
+                    test_time = run_trace(test, args, screenshot_device_dir, extra_args)
 
                     if screenshot_device_dir:
                         pull_screenshot(args, screenshot_device_dir, renderer)
@@ -1216,7 +1237,6 @@ def run_traces(args):
 
                         gfxlib_cpuinst = cpu_inst_results["gles_lib"]
                         gfxlib_cpuinst += cpu_inst_results["angle_lib"]
-                        gfxlib_cpuinst += cpu_inst_results["vulkan_lib"]
                         gfxlib_cpuinst = safe_divide(gfxlib_cpuinst, frame_count)
 
                         angle_cpuinst = cpu_inst_results["angle_lib"]
@@ -1246,7 +1266,12 @@ def run_traces(args):
 
                 gpu_time = get_gpu_time() if args.gpu_time else '0'
 
-                frame_wall_time = get_frame_wall_time() if args.frame_wall_time else '0'
+                if args.frame_wall_time:
+                    frame_wall_time = get_frame_wall_time()
+                    vk_api_wall_time = get_vk_api_wall_time() if args.vulkan_api_wall_time else '0'
+                else:
+                    frame_wall_time = '0'
+                    vk_api_wall_time = '0'
 
                 cpu_time = get_cpu_time()
 
@@ -1273,6 +1298,10 @@ def run_traces(args):
                 if len(frame_wall_times[test]) == 0:
                     frame_wall_times[test] = defaultdict(list)
                 frame_wall_times[test][renderer].append(safe_cast_float(frame_wall_time))
+
+                if len(vk_api_wall_times[test]) == 0:
+                    vk_api_wall_times[test] = defaultdict(list)
+                vk_api_wall_times[test][renderer].append(safe_cast_float(vk_api_wall_time))
 
                 if len(cpu_times[test]) == 0:
                     cpu_times[test] = defaultdict(list)
@@ -1336,6 +1365,7 @@ def run_traces(args):
                     'wall_time': wall_time,
                     'gpu_time': gpu_time,
                     'frame_wall_time': frame_wall_time,
+                    'vk_api_wall_time': vk_api_wall_time,
                     'cpu_time': cpu_time,
                     'gpu_power': '%.3f' % gpu_power,
                     'cpu_power': '%.3f' % cpu_power,
@@ -1358,6 +1388,7 @@ def run_traces(args):
                     'wall_time': wall_time,
                     'gpu_time': gpu_time,
                     'frame_wall_time': frame_wall_time,
+                    'vk_api_wall_time': vk_api_wall_time,
                     'cpu_time': cpu_time,
                     'gpu_power': gpu_power,
                     'cpu_power': cpu_power,
@@ -1413,6 +1444,7 @@ def generate_summary(raw_data_filename, summary_filename):
     wall_times = defaultdict(lambda: defaultdict(list))
     gpu_times = defaultdict(lambda: defaultdict(list))
     frame_wall_times = defaultdict(lambda: defaultdict(list))
+    vk_api_wall_times = defaultdict(lambda: defaultdict(list))
     cpu_times = defaultdict(lambda: defaultdict(list))
     gpu_powers = defaultdict(lambda: defaultdict(list))
     cpu_powers = defaultdict(lambda: defaultdict(list))
@@ -1465,6 +1497,8 @@ def generate_summary(raw_data_filename, summary_filename):
                 gpu_times[trace][renderer].append(safe_cast_float(row.get('gpu_time(ms)', '')))
                 frame_wall_times[trace][renderer].append(
                     safe_cast_float(row.get('frame_wall_time(ms)', '')))
+                vk_api_wall_times[trace][renderer].append(
+                    safe_cast_float(row.get('vk_api_wall_time(ms)', '')))
                 cpu_times[trace][renderer].append(safe_cast_float(row.get('cpu_time(ms)', '')))
                 gpu_powers[trace][renderer].append(safe_cast_float(row.get('gpu_power(W)', '')))
                 cpu_powers[trace][renderer].append(safe_cast_float(row.get('cpu_power(W)', '')))
@@ -1527,6 +1561,8 @@ def generate_summary(raw_data_filename, summary_filename):
         header_row.extend([
             f"\"{renderer_name}\nFrame\nwall\ntime\nper\nframe\n(ms)\"",
             f"\"{renderer_name}\nFrame\nwall\ntime\nvariance\"",
+            f"\"{renderer_name}\nvk\napi\nwall\ntime\nper\nframe\n(ms)\"",
+            f"\"{renderer_name}\nvk\napi\nwall\ntime\nvariance\"",
             f"\"{renderer_name}\nCPU\ntime\nper\nframe\n(ms)\"",
             f"\"{renderer_name}\nCPU\ntime\nvariance\""
         ])
@@ -1582,7 +1618,15 @@ def generate_summary(raw_data_filename, summary_filename):
             "\"Native\nFrame\nwall\ntime\nper\nframe\n(ms)\"",
             "\"Native\nFrame\nwall\ntime\nvariance\"",
             "\"ANGLE\nFrame\nwall\ntime\nper\nframe\n(ms)\"",
-            "\"ANGLE\nFrame\nwall\ntime\nvariance\"", "\"Frame\nwall\ntime\ncompare\"",
+            "\"ANGLE\nFrame\nwall\ntime\nvariance\"", "\"Frame\nwall\ntime\ncompare\""
+        ])
+        header_row.extend([
+            "\"Native\nvk\napi\nwall\ntime\nper\nframe\n(ms)\"",
+            "\"Native\nvk\napi\nwall\ntime\nvariance\"",
+            "\"ANGLE\nvk\napi\nwall\ntime\nper\nframe\n(ms)\"",
+            "\"ANGLE\nvk\napi\nwall\ntime\nvariance\"", "\"vk\napi\nwall\ntime\ncompare\""
+        ])
+        header_row.extend([
             "\"Native\nCPU\ntime\nper\nframe\n(ms)\"", "\"Native\nCPU\ntime\nvariance\"",
             "\"ANGLE\nCPU\ntime\nper\nframe\n(ms)\"", "\"ANGLE\nCPU\ntime\nvariance\"",
             "\"CPU\ntime\ncompare\""
@@ -1639,6 +1683,9 @@ def generate_summary(raw_data_filename, summary_filename):
         populate_summary_row(rows, name, results)
 
     for name, results in frame_wall_times.items():
+        populate_summary_row(rows, name, results)
+
+    for name, results in vk_api_wall_times.items():
         populate_summary_row(rows, name, results)
 
     for name, results in cpu_times.items():
@@ -1701,58 +1748,61 @@ def generate_summary(raw_data_filename, summary_filename):
                 # Frame wall time
                 "%.3f" % data[renderer_name][4],
                 percent(data[renderer_name][5]),
-                # CPU time
+                # Vulkan API wall time
                 "%.3f" % data[renderer_name][6],
-                percent(data[renderer_name][7])
+                percent(data[renderer_name][7]),
+                # CPU time
+                "%.3f" % data[renderer_name][8],
+                percent(data[renderer_name][9])
             ])
 
             if has_power:
                 data_row.extend([
                     # GPU power
-                    "%.3f" % data[renderer_name][8],
-                    percent(data[renderer_name][9]),
-                    # CPU power
                     "%.3f" % data[renderer_name][10],
                     percent(data[renderer_name][11]),
-                    # Infra power
+                    # CPU power
                     "%.3f" % data[renderer_name][12],
-                    percent(data[renderer_name][13])
+                    percent(data[renderer_name][13]),
+                    # Infra power
+                    "%.3f" % data[renderer_name][14],
+                    percent(data[renderer_name][15])
                 ])
             if has_memory:
                 data_row.extend([
                     # GPU mem
-                    int(data[renderer_name][14]),
-                    percent(data[renderer_name][15]),
-                    # GPU peak mem
                     int(data[renderer_name][16]),
                     percent(data[renderer_name][17]),
-                    # process mem
+                    # GPU peak mem
                     int(data[renderer_name][18]),
                     percent(data[renderer_name][19]),
-                    # process peak mem
+                    # process mem
                     int(data[renderer_name][20]),
-                    percent(data[renderer_name][21])
+                    percent(data[renderer_name][21]),
+                    # process peak mem
+                    int(data[renderer_name][22]),
+                    percent(data[renderer_name][23])
                 ])
             if has_cpuinst:
                 data_row.extend([
                     # process cpuinst
-                    "%.3f" % data[renderer_name][22],
-                    percent(data[renderer_name][23]),
-                    # gfxlib cpuinst
                     "%.3f" % data[renderer_name][24],
                     percent(data[renderer_name][25]),
-                    # angle cpuinst
+                    # gfxlib cpuinst
                     "%.3f" % data[renderer_name][26],
                     percent(data[renderer_name][27]),
-                    # vulkan cpuinst
+                    # angle cpuinst
                     "%.3f" % data[renderer_name][28],
                     percent(data[renderer_name][29]),
-                    # gles cpuinst
+                    # vulkan cpuinst
                     "%.3f" % data[renderer_name][30],
                     percent(data[renderer_name][31]),
-                    # libc cpuinst
+                    # gles cpuinst
                     "%.3f" % data[renderer_name][32],
-                    percent(data[renderer_name][33])
+                    percent(data[renderer_name][33]),
+                    # libc cpuinst
+                    "%.3f" % data[renderer_name][34],
+                    percent(data[renderer_name][35])
                 ])
             summary_writer.writerow(data_row)
     else:
@@ -1784,100 +1834,106 @@ def generate_summary(raw_data_filename, summary_filename):
                 "%.3f" % data["vulkan"][4],
                 percent(data["vulkan"][5]),
                 percent(safe_divide(data["native"][4], data["vulkan"][4])),
-                # CPU time
+                # VK API wall_time
                 "%.3f" % data["native"][6],
                 percent(data["native"][7]),
                 "%.3f" % data["vulkan"][6],
                 percent(data["vulkan"][7]),
-                percent(safe_divide(data["native"][6], data["vulkan"][6]))
+                percent(safe_divide(data["native"][6], data["vulkan"][6])),
+                # CPU time
+                "%.3f" % data["native"][8],
+                percent(data["native"][9]),
+                "%.3f" % data["vulkan"][8],
+                percent(data["vulkan"][9]),
+                percent(safe_divide(data["native"][8], data["vulkan"][8]))
             ])
 
             if has_power:
                 data_row.extend([
                     # GPU power
-                    "%.3f" % data["native"][8],
-                    percent(data["native"][9]),
-                    "%.3f" % data["vulkan"][8],
-                    percent(data["vulkan"][9]),
-                    percent(safe_divide(data["native"][8], data["vulkan"][8])),
-                    # CPU power
                     "%.3f" % data["native"][10],
                     percent(data["native"][11]),
                     "%.3f" % data["vulkan"][10],
                     percent(data["vulkan"][11]),
                     percent(safe_divide(data["native"][10], data["vulkan"][10])),
-                    # Infra power
+                    # CPU power
                     "%.3f" % data["native"][12],
                     percent(data["native"][13]),
                     "%.3f" % data["vulkan"][12],
                     percent(data["vulkan"][13]),
-                    percent(safe_divide(data["native"][12], data["vulkan"][12]))
+                    percent(safe_divide(data["native"][12], data["vulkan"][12])),
+                    # Infra power
+                    "%.3f" % data["native"][14],
+                    percent(data["native"][15]),
+                    "%.3f" % data["vulkan"][14],
+                    percent(data["vulkan"][15]),
+                    percent(safe_divide(data["native"][14], data["vulkan"][14]))
                 ])
             if has_memory:
                 data_row.extend([
                     # GPU mem
-                    int(data["native"][14]),
-                    percent(data["native"][15]),
-                    int(data["vulkan"][14]),
-                    percent(data["vulkan"][15]),
-                    percent(safe_divide(data["native"][14], data["vulkan"][14])),
-                    # GPU peak mem
                     int(data["native"][16]),
                     percent(data["native"][17]),
                     int(data["vulkan"][16]),
                     percent(data["vulkan"][17]),
                     percent(safe_divide(data["native"][16], data["vulkan"][16])),
-                    # process mem
+                    # GPU peak mem
                     int(data["native"][18]),
                     percent(data["native"][19]),
                     int(data["vulkan"][18]),
                     percent(data["vulkan"][19]),
                     percent(safe_divide(data["native"][18], data["vulkan"][18])),
-                    # process peak mem
+                    # process mem
                     int(data["native"][20]),
                     percent(data["native"][21]),
                     int(data["vulkan"][20]),
                     percent(data["vulkan"][21]),
-                    percent(safe_divide(data["native"][20], data["vulkan"][20]))
+                    percent(safe_divide(data["native"][20], data["vulkan"][20])),
+                    # process peak mem
+                    int(data["native"][22]),
+                    percent(data["native"][23]),
+                    int(data["vulkan"][22]),
+                    percent(data["vulkan"][23]),
+                    percent(safe_divide(data["native"][22], data["vulkan"][22]))
                 ])
             if has_cpuinst:
                 data_row.extend([
                     # process cpuinst
-                    "%.3f" % data["native"][22],
-                    percent(data["native"][23]),
-                    "%.3f" % data["vulkan"][22],
-                    percent(data["vulkan"][23]),
-                    percent(safe_divide(data["native"][22], data["vulkan"][22])),
-                    # gfxlib cpuinst
                     "%.3f" % data["native"][24],
                     percent(data["native"][25]),
                     "%.3f" % data["vulkan"][24],
                     percent(data["vulkan"][25]),
                     percent(safe_divide(data["native"][24], data["vulkan"][24])),
-                    # angle cpuinst
+                    # gfxlib cpuinst
                     "%.3f" % data["native"][26],
                     percent(data["native"][27]),
                     "%.3f" % data["vulkan"][26],
                     percent(data["vulkan"][27]),
                     percent(safe_divide(data["native"][26], data["vulkan"][26])),
-                    # vulkan cpuinst
+                    # angle cpuinst
                     "%.3f" % data["native"][28],
                     percent(data["native"][29]),
                     "%.3f" % data["vulkan"][28],
                     percent(data["vulkan"][29]),
                     percent(safe_divide(data["native"][28], data["vulkan"][28])),
-                    # gles cpuinst
+                    # vulkan cpuinst
                     "%.3f" % data["native"][30],
                     percent(data["native"][31]),
                     "%.3f" % data["vulkan"][30],
                     percent(data["vulkan"][31]),
                     percent(safe_divide(data["native"][30], data["vulkan"][30])),
-                    # libc cpuinst
+                    # gles cpuinst
                     "%.3f" % data["native"][32],
                     percent(data["native"][33]),
                     "%.3f" % data["vulkan"][32],
                     percent(data["vulkan"][33]),
-                    percent(safe_divide(data["native"][32], data["vulkan"][32]))
+                    percent(safe_divide(data["native"][32], data["vulkan"][32])),
+                    # libc cpuinst
+                    "%.3f" % data["native"][34],
+                    percent(data["native"][35]),
+                    "%.3f" % data["vulkan"][34],
+                    percent(data["vulkan"][35]),
+                    percent(safe_divide(data["native"][34], data["vulkan"][34]))
                 ])
             summary_writer.writerow(data_row)
 
@@ -1913,17 +1969,10 @@ def main():
         action='store_true',
         default=False)
     parser.add_argument('--maxsteps', help='Run for fixed set of frames', default='')
-    parser.add_argument(
-        '--run-to-key-frame', help='Run to key-frame', action='store_true', default=False)
     parser.add_argument('--fixedtime', help='Run for fixed set of time', default='')
     parser.add_argument(
         '--minimizegpuwork',
         help='Whether to run with minimized GPU work',
-        action='store_true',
-        default=False)
-    parser.add_argument(
-        '--skip-blit-in-offscreen',
-        help='skip blit operation in offscreen mode',
         action='store_true',
         default=False)
     parser.add_argument('--output-tag', help='Tag for output files.')
@@ -1967,8 +2016,6 @@ def main():
         '--screenshot-frame',
         help='Specify a specific frame to screenshot. Uses --screenshot-dir if provied.',
         default='')
-    parser.add_argument(
-        '--fps-limit', help='Limit replay framerate to specified value', default='')
 
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
@@ -1982,17 +2029,7 @@ def main():
         action='store_true',
         default=False)
     parser.add_argument(
-        '--fps-limit-uses-busy-wait',
-        help='Use busy wait instead of sleep to limit the framerate.',
-        action='store_true',
-        default=False)
-    parser.add_argument(
         '--gpu-time', help='Enables GPU time tracking', action='store_true', default=False)
-    parser.add_argument(
-        '--add-swap-into-gpu-time',
-        help='Adds swap/offscreen blit into the gpu_time tracking',
-        action='store_true',
-        default=False)
     parser.add_argument(
         '--frame-wall-time',
         help='Enables frame_wall_time tracking',
@@ -2004,13 +2041,18 @@ def main():
         action='store_true',
         default=False)
     parser.add_argument(
+        '--vulkan-api-wall-time',
+        help='Enables ANGLE vulkan back-end `vk*()` calls wall time tracking',
+        action='store_true',
+        default=False)
+    parser.add_argument(
         '--summarize-only',
         nargs=2,
         metavar=('raw_data', 'summary'),
         help='Generates summary from raw_data CSV. Takes exactly two arguments - raw_data filename followed by summary filename.'
     )
 
-    args = parser.parse_args()
+    args, extra_args = parser.parse_known_args()
 
     angle_test_util.SetupLogging(args.log.upper())
 
@@ -2039,7 +2081,7 @@ def main():
         try:
             if args.custom_throttling_temp:
                 set_vendor_thermal_control(disabled=1)
-            run_traces(args)
+            run_traces(args, extra_args)
             if args.output_tag:
                 generate_summary(get_raw_data_name(args), get_summary_name(args))
         finally:

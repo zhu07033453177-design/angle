@@ -37,6 +37,19 @@ WindowSurfaceVkWayland::WindowSurfaceVkWayland(const egl::SurfaceState &surfaceS
     mExtents = gl::Extents(eglWindow->width, eglWindow->height, 1);
 }
 
+WindowSurfaceVkWayland::~WindowSurfaceVkWayland()
+{
+    // The wl_egl_window is owned by the application and can outlive this surface.
+    // Unregister our callback so a later resize cannot dispatch ResizeCallback into
+    // this destroyed object. Only clear if we are still the registered owner.
+    wl_egl_window *eglWindow = reinterpret_cast<wl_egl_window *>(mNativeWindowType);
+    if (eglWindow != nullptr && eglWindow->driver_private == this)
+    {
+        eglWindow->resize_callback = nullptr;
+        eglWindow->driver_private  = nullptr;
+    }
+}
+
 angle::Result WindowSurfaceVkWayland::createSurfaceVk(vk::ErrorContext *context)
 {
     wl_egl_window *eglWindow = reinterpret_cast<wl_egl_window *>(mNativeWindowType);
@@ -51,9 +64,9 @@ angle::Result WindowSurfaceVkWayland::createSurfaceVk(vk::ErrorContext *context)
     wl_display *surfaceDisplay = mWaylandDisplay;
 
     ANGLE_VK_CHECK(context,
-                   vkGetPhysicalDeviceWaylandPresentationSupportKHR(
-                       context->getRenderer()->getPhysicalDevice(),
-                       context->getRenderer()->getQueueFamilyIndex(), surfaceDisplay),
+                   VK_CALL(vkGetPhysicalDeviceWaylandPresentationSupportKHR,
+                           context->getRenderer()->getPhysicalDevice(),
+                           context->getRenderer()->getQueueFamilyIndex(), surfaceDisplay),
                    VK_ERROR_INITIALIZATION_FAILED);
 
     VkWaylandSurfaceCreateInfoKHR createInfo = {};
@@ -62,8 +75,8 @@ angle::Result WindowSurfaceVkWayland::createSurfaceVk(vk::ErrorContext *context)
     createInfo.flags   = 0;
     createInfo.display = surfaceDisplay;
     createInfo.surface = eglWindow->surface;
-    ANGLE_VK_TRY(context, vkCreateWaylandSurfaceKHR(context->getRenderer()->getInstance(),
-                                                    &createInfo, nullptr, &mSurface));
+    ANGLE_VK_TRY(context, VK_CALL(vkCreateWaylandSurfaceKHR, context->getRenderer()->getInstance(),
+                                  &createInfo, nullptr, &mSurface));
 
     return angle::Result::Continue;
 }

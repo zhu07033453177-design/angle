@@ -161,7 +161,6 @@ bool SupportsClipControl(const FunctionsGL *functions);
 bool SupportsDrawBuffersIndexed(const FunctionsGL *functions);
 bool SupportsBlendEquationAdvancedCoherent(const FunctionsGL *functions);
 bool SupportsPolygonMode(const FunctionsGL *functions);
-bool SupportsPolygonModeNV(const FunctionsGL *functions);
 bool SupportsPolygonOffsetClamp(const FunctionsGL *functions);
 bool SupportsDepthClamp(const FunctionsGL *functions);
 bool SupportsSRGBWriteControl(const FunctionsGL *functions);
@@ -171,6 +170,7 @@ bool SupportsShaderIOBlocks(const FunctionsGL *functions);
 bool SupportsClipCullDistance(const FunctionsGL *functions);
 bool SupportsSampleMask(const FunctionsGL *functions);
 bool SupportsRasterizerDiscard(const FunctionsGL *functions);
+bool SupportsInstancing(const FunctionsGL *functions);
 bool SupportsNativeRendering(const FunctionsGL *functions,
                              gl::TextureType type,
                              GLenum internalFormat);

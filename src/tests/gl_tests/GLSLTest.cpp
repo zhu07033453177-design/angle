@@ -10,6 +10,8 @@
 
 #include "test_utils/ANGLETest.h"
 
+#include <array>
+
 #include "test_utils/angle_test_configs.h"
 #include "test_utils/gl_raii.h"
 #include "util/shader_utils.h"
@@ -1108,12 +1110,11 @@ TEST_P(GLSLTest_ES3, FragmentShaderOutputArray)
     glGenFramebuffers(1, &fbo);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
 
-    GLuint textures[4];
-    glGenTextures(4, textures);
+    std::array<GLTexture, 4> textures;
 
-    for (size_t texIndex = 0; texIndex < ArraySize(textures); texIndex++)
+    for (GLTexture &texture : textures)
     {
-        glBindTexture(GL_TEXTURE_2D, textures[texIndex]);
+        glBindTexture(GL_TEXTURE_2D, texture);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, getWindowWidth(), getWindowHeight(), 0, GL_RGBA,
                      GL_UNSIGNED_BYTE, nullptr);
     }
@@ -1195,7 +1196,7 @@ void main()
     glGetIntegerv(GL_MAX_DRAW_BUFFERS, &maxDrawBuffers);
     ASSERT_GE(maxDrawBuffers, kDrawBufferCount);
 
-    GLTexture textures[kDrawBufferCount];
+    std::array<GLTexture, kDrawBufferCount> textures;
 
     for (GLint texIndex = 0; texIndex < kDrawBufferCount; ++texIndex)
     {
@@ -1323,6 +1324,64 @@ void main()
             id = 2999;
         }
     }
+}
+
+// Test declaring nameless structs with variables with identical names in different scopes.
+TEST_P(GLSLTest_ES3, NamelessStructsIdenticalVariableNames)
+{
+    constexpr char kVS[] = R"(#version 300 es
+precision mediump float;
+in vec2 position;
+out struct {
+   float f;
+} v;
+
+void main()
+{
+    gl_Position = vec4(position, 0, 1);
+    v.f = 0.5;
+})";
+
+    constexpr char kFS[] = R"(#version 300 es
+precision mediump float;
+in struct {
+   float f;
+} v;
+
+struct {
+    int i;
+} name;
+
+uniform int zero;
+out vec4 color;
+
+void main()
+{
+    name.i = zero + 1;
+    color = vec4(0, 0, 0, name.i);
+
+    struct {
+        vec2 g;
+    } name;
+    name.g = vec2(v.f);
+
+    if (zero == 0)
+    {
+        struct {
+            int i;
+        } name;
+        name.i = zero;
+
+        color.b = float(name.i);
+    }
+
+    color.rg = name.g;
+})";
+
+    ANGLE_GL_PROGRAM(program, kVS, kFS);
+    drawQuad(program, "position", 0.0f);
+    EXPECT_PIXEL_COLOR_NEAR(0, 0, GLColor(127, 127, 0, 255), 1);
+    ASSERT_GL_NO_ERROR();
 }
 
 // Test that defining a UBO with an "id" suffix does not collide with a struct declaration without
@@ -1554,6 +1613,29 @@ void main()
 })";
 
     ANGLE_GL_PROGRAM(program, kVS, kFS);
+}
+
+// Test constant folding of a small struct variable.
+TEST_P(GLSLTest, SmallStructConstantFolding)
+{
+    constexpr char kFS[] = R"(precision mediump float;
+const struct S1 {
+   float f;
+} s1 = S1(0.5);
+
+void main()
+{
+    const struct S2 {
+       vec2 v;
+    } s2 = S2(vec2(0.25, 0.75));
+    S1 s = s1;
+    gl_FragColor = vec4(s.f, s2.v, 1);
+})";
+
+    ANGLE_GL_PROGRAM(program, essl1_shaders::vs::Simple(), kFS);
+    drawQuad(program, essl1_shaders::PositionAttrib(), 0.5f);
+    EXPECT_PIXEL_COLOR_NEAR(0, 0, GLColor(127, 63, 191, 255), 1);
+    ASSERT_GL_NO_ERROR();
 }
 
 // Regression test based on WebGL's conformance/ogles/GL/build/build_001_to_008.html
@@ -1974,8 +2056,8 @@ TEST_P(GLSLTest_ES3, GLVertexIDIntegerTextureDrawElementsU8LineIds)
 
     glDrawElements(GL_LINES, kNumIndices, GL_UNSIGNED_BYTE, 0);
 
-    GLint pixels[kNumIndices * 4];
-    glReadPixels(0, 0, kNumIndices, 1, GL_RGBA_INTEGER, GL_INT, pixels);
+    std::array<GLint, kNumIndices * 4> pixels;
+    glReadPixels(0, 0, kNumIndices, 1, GL_RGBA_INTEGER, GL_INT, pixels.data());
 
     for (size_t i = 0; i < kNumIndices; ++i)
     {
@@ -3095,7 +3177,7 @@ void main() {
 
     ANGLE_GL_PROGRAM(program, essl1_shaders::vs::Simple(), kFS);
     glUseProgram(program);
-    GLTexture textures[4];
+    std::array<GLTexture, 4> textures;
     GLColor expected = MakeGLColor(32, 64, 96, 255);
     GLubyte data[8]  = {};  // 4 bytes of padding, so that texture can be initialized with 4 bytes
     memcpy(data, expected.data(), sizeof(expected));
@@ -5319,7 +5401,7 @@ TEST_P(GLSLTest_ES31, ArraysOfArraysSampler)
 
     ANGLE_GL_PROGRAM(program, essl31_shaders::vs::Simple(), kFS);
     glUseProgram(program);
-    GLTexture textures[2][2];
+    std::array<std::array<GLTexture, 2>, 2> textures;
     for (int i = 0; i < 2; i++)
     {
         for (int j = 0; j < 2; j++)
@@ -5393,7 +5475,7 @@ TEST_P(GLSLTest_ES31, ArraysOfArraysImage)
     EXPECT_GL_NO_ERROR();
 
     GLuint imageData = 200u;
-    GLTexture images[1][2][3];
+    std::array<std::array<std::array<GLTexture, 3>, 2>, 1> images;
     for (int i = 0; i < 1; i++)
     {
         for (int j = 0; j < 2; j++)
@@ -5500,7 +5582,7 @@ TEST_P(GLSLTest_ES31, ConsecutiveArraysOfArraysImage)
     constexpr GLsizei kImage3Binding = kImage2Binding + kImage2Units;
 
     constexpr GLuint kImage1Data = 13;
-    GLTexture images1[kImage1Layers][kImage1Rows][kImage1Cols];
+    std::array<std::array<std::array<GLTexture, kImage1Cols>, kImage1Rows>, kImage1Layers> images1;
     for (int layer = 0; layer < kImage1Layers; layer++)
     {
         for (int row = 0; row < kImage1Rows; row++)
@@ -5520,7 +5602,7 @@ TEST_P(GLSLTest_ES31, ConsecutiveArraysOfArraysImage)
     }
 
     constexpr GLuint kImage2Data = 17;
-    GLTexture images2[kImage2Rows][kImage2Cols];
+    std::array<std::array<GLTexture, kImage2Cols>, kImage2Rows> images2;
     for (int row = 0; row < kImage2Rows; row++)
     {
         for (int col = 0; col < kImage2Cols; col++)
@@ -5631,7 +5713,7 @@ void main(void)
     constexpr GLsizei kImageRows = 2;
     constexpr GLsizei kImageCols = 3;
     constexpr GLfloat kImageData = 0;
-    GLTexture images[kImageRows][kImageCols];
+    std::array<std::array<GLTexture, kImageCols>, kImageRows> images;
     for (size_t row = 0; row < kImageRows; row++)
     {
         for (size_t col = 0; col < kImageCols; col++)
@@ -5987,7 +6069,7 @@ void main() {
 
     ANGLE_GL_PROGRAM(program, essl31_shaders::vs::Simple(), kFS);
     glUseProgram(program);
-    GLTexture textures[2];
+    std::array<GLTexture, 2> textures;
     GLColor expected = MakeGLColor(32, 64, 96, 255);
     GLubyte data[6]  = {};  // Two bytes of padding, so that texture can be initialized with 4 bytes
     memcpy(data, expected.data(), sizeof(expected));
@@ -6043,7 +6125,7 @@ void main() {
 
     ANGLE_GL_PROGRAM(program, essl31_shaders::vs::Simple(), kFS);
     glUseProgram(program);
-    GLTexture textures[2];
+    std::array<GLTexture, 2> textures;
     GLColor expected = MakeGLColor(32, 64, 96, 255);
     GLubyte data[6]  = {};  // Two bytes of padding, so that texture can be initialized with 4 bytes
     memcpy(data, expected.data(), sizeof(expected));
@@ -6088,7 +6170,7 @@ void main() {
 
     ANGLE_GL_PROGRAM(program, essl31_shaders::vs::Simple(), kFS);
     glUseProgram(program);
-    GLTexture textures[2][2];
+    std::array<std::array<GLTexture, 2>, 2> textures;
     for (int i = 0; i < 2; i++)
     {
         for (int j = 0; j < 2; j++)
@@ -6147,7 +6229,7 @@ void main() {
 
     ANGLE_GL_PROGRAM(program, essl31_shaders::vs::Simple(), kFS);
     glUseProgram(program);
-    GLTexture textures[2][2][2][2];
+    std::array<std::array<std::array<std::array<GLTexture, 2>, 2>, 2>, 2> textures;
     for (int i = 0; i < 2; i++)
     {
         for (int j = 0; j < 2; j++)
@@ -6225,14 +6307,15 @@ void main() {
         GLTexture data1[2];
         GLTexture data2[3];
     };
-    Data textures[2][3];
+    std::array<std::array<Data, 3>, 2> textures;
     for (int i = 0; i < 2; i++)
     {
         for (int j = 0; j < 3; j++)
         {
-            GLTexture *arrays[]     = {&textures[i][j].data1[0], &textures[i][j].data2[0]};
-            size_t arrayLengths[]   = {2, 3};
-            size_t arrayOffsets[]   = {0, 2};
+            std::array<GLTexture *, 2> arrays  = {&textures[i][j].data1[0],
+                                                  &textures[i][j].data2[0]};
+            std::array<size_t, 2> arrayLengths = {2, 3};
+            std::array<size_t, 2> arrayOffsets = {0, 2};
             size_t totalArrayLength = 5;
             for (int k = 0; k < 2; k++)
             {
@@ -6297,7 +6380,7 @@ void main() {
 
     ANGLE_GL_PROGRAM(program, essl31_shaders::vs::Simple(), kFS);
     glUseProgram(program);
-    GLTexture textures[3][2][2];
+    std::array<std::array<std::array<GLTexture, 2>, 2>, 3> textures;
     for (int i = 0; i < 3; i++)
     {
         for (int j = 0; j < 2; j++)
@@ -6371,7 +6454,7 @@ void main() {
 
     ANGLE_GL_PROGRAM(program, essl31_shaders::vs::Simple(), kFS);
     glUseProgram(program);
-    GLTexture textures[2][3];
+    std::array<std::array<GLTexture, 3>, 2> textures;
     for (int i = 0; i < 2; i++)
     {
         for (int j = 0; j < 3; j++)
@@ -6430,7 +6513,7 @@ void main() {
 
     ANGLE_GL_PROGRAM(program, essl31_shaders::vs::Simple(), kFS);
     glUseProgram(program);
-    GLTexture textures[2][3];
+    std::array<std::array<GLTexture, 3>, 2> textures;
     for (int i = 0; i < 2; i++)
     {
         for (int j = 0; j < 3; j++)
@@ -6498,7 +6581,7 @@ void main() {
 
     ANGLE_GL_PROGRAM(program, essl31_shaders::vs::Simple(), kFS);
     glUseProgram(program);
-    GLTexture textures[3][2][2][2];
+    std::array<std::array<std::array<std::array<GLTexture, 2>, 2>, 2>, 3> textures;
     for (int i = 0; i < 3; i++)
     {
         for (int j = 0; j < 2; j++)
@@ -6577,8 +6660,8 @@ void main() {
 
     ANGLE_GL_PROGRAM(program, essl31_shaders::vs::Simple(), kFS);
     glUseProgram(program);
-    GLTexture textures1[2][3][4];
-    GLTexture textures2[4];
+    std::array<std::array<std::array<GLTexture, 4>, 3>, 2> textures1;
+    std::array<GLTexture, 4> textures2;
     for (int i = 0; i < 2; i++)
     {
         for (int j = 0; j < 3; j++)
@@ -7353,6 +7436,37 @@ void main()
     ASSERT_GL_NO_ERROR();
 
     EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
+}
+
+// Test that nameless structs with samplers work
+TEST_P(GLSLTest_ES3, NamelessStructWithSamplers)
+{
+    const char kFS[] = R"(#version 300 es
+precision mediump float;
+
+uniform struct
+{
+    sampler2D s;
+    float b;
+} u;
+
+out vec4 color;
+
+void main()
+{
+    color = texture(u.s, vec2(0)) + vec4(0, u.b, 0, 1);
+})";
+
+    ANGLE_GL_PROGRAM(program, essl3_shaders::vs::Simple(), kFS);
+    glUseProgram(program);
+
+    GLint uniLocB = glGetUniformLocation(program, "u.b");
+    ASSERT_NE(-1, uniLocB);
+    glUniform1f(uniLocB, 0.75f);
+
+    drawQuad(program, essl3_shaders::PositionAttrib(), 0.0f);
+    EXPECT_PIXEL_COLOR_NEAR(0, 0, GLColor(0, 191, 0, 255), 1);
+    ASSERT_GL_NO_ERROR();
 }
 
 // Test that nested structs with samplers work when the nested struct is not the last element.
@@ -10366,11 +10480,94 @@ out vec4 my_FragColor;
 flat in struct
 {
     int field;
-} v_s0, v_s1, v_s2, v_s3;
+} v_s2, v_s0, v_s3, v_s1;
 void main()
 {
     bool success = v_s0 != v_s1 && v_s0 != v_s2 && v_s0 != v_s3 && v_s1 != v_s2 && v_s1 != v_s3 && v_s2 != v_s3;
     success = success && v_s0.field == 1 && v_s1.field == 2 && v_s2.field == 3 && v_s3.field == 4;
+    my_FragColor = vec4(1, 0, 0, 1);
+    if (success)
+    {
+        my_FragColor = vec4(0, 1, 0, 1);
+    }
+})";
+
+    ANGLE_GL_PROGRAM(program, kVS, kFS);
+    drawQuad(program.get(), "inputAttribute", 0.5f);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
+}
+
+// Test that a varying anonymous structs can be assigned to another with the same type.
+TEST_P(GLSLTest_ES3, VaryingAnonymousStructAssignment)
+{
+    constexpr char kVS[] = R"(#version 300 es
+in vec4 inputAttribute;
+flat out struct
+{
+    int field;
+} unused, v_s0, v_s1;
+
+void main()
+{
+    v_s0.field = 1;
+    v_s1 = v_s0;
+    unused.field = 2;
+    gl_Position = inputAttribute;
+})";
+
+    constexpr char kFS[] = R"(#version 300 es
+precision highp float;
+out vec4 my_FragColor;
+flat in struct
+{
+    int field;
+} v_s1, v_s0;
+void main()
+{
+    bool success = v_s0 == v_s1;
+    success = success && v_s0.field == 1 && v_s1.field == 1;
+    my_FragColor = vec4(1, 0, 0, 1);
+    if (success)
+    {
+        my_FragColor = vec4(0, 1, 0, 1);
+    }
+})";
+
+    ANGLE_GL_PROGRAM(program, kVS, kFS);
+    drawQuad(program.get(), "inputAttribute", 0.5f);
+    EXPECT_PIXEL_COLOR_EQ(0, 0, GLColor::green);
+}
+
+// Test that a varying anonymous structs can be used in ternary.
+TEST_P(GLSLTest_ES3, VaryingAnonymousStructTernary)
+{
+    constexpr char kVS[] = R"(#version 300 es
+in vec4 inputAttribute;
+flat out struct
+{
+    int field;
+} unused, v_s0, v_s1;
+
+void main()
+{
+    v_s0.field = 1;
+    v_s1 = v_s0;
+    unused.field = 2;
+    gl_Position = inputAttribute;
+})";
+
+    constexpr char kFS[] = R"(#version 300 es
+precision highp float;
+out vec4 my_FragColor;
+uniform int zero;
+flat in struct
+{
+    int field;
+} v_s1, v_s0;
+void main()
+{
+    bool success = (zero == 0 ? v_s0 : v_s1).field == 1;
+    success = success && v_s0.field == 1 && v_s1.field == 1;
     my_FragColor = vec4(1, 0, 0, 1);
     if (success)
     {
@@ -11981,8 +12178,8 @@ void main()
     GLFramebuffer fbo;
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 
-    GLTexture textures[4];
-    for (size_t texIndex = 0; texIndex < ArraySize(textures); texIndex++)
+    std::array<GLTexture, 4> textures;
+    for (size_t texIndex = 0; texIndex < textures.size(); texIndex++)
     {
         glBindTexture(GL_TEXTURE_2D, textures[texIndex]);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
@@ -13891,7 +14088,7 @@ void main(void)
         GLColor(0, 0, 0, 0),  GLColor(127, 0, 0, 0), GLColor(255, 0, 0, 0),
         GLColor(31, 0, 0, 0), GLColor(63, 0, 0, 0),  GLColor(191, 0, 0, 0),
     };
-    GLTexture textures[2][3];
+    std::array<std::array<GLTexture, 3>, 2> textures;
 
     for (int dim1 = 0; dim1 < 2; ++dim1)
     {
@@ -14000,7 +14197,7 @@ void main(void)
         GLColor(0, 0, 0, 0),  GLColor(127, 0, 0, 0), GLColor(255, 0, 0, 0),
         GLColor(31, 0, 0, 0), GLColor(63, 0, 0, 0),  GLColor(191, 0, 0, 0),
     };
-    GLTexture textures[2][3];
+    std::array<std::array<GLTexture, 3>, 2> textures;
 
     for (int dim1 = 0; dim1 < 2; ++dim1)
     {
@@ -14149,7 +14346,7 @@ outbuf.success = uint(sampler3DAndAtomicCounter(smplr, 0u, ac));
         GLColor(128, 0, 0, 0), GLColor(136, 0, 0, 0), GLColor(144, 0, 0, 0), GLColor(152, 0, 0, 0),
         GLColor(160, 0, 0, 0), GLColor(168, 0, 0, 0), GLColor(176, 0, 0, 0), GLColor(184, 0, 0, 0),
     };
-    GLTexture textures[2][3][4];
+    std::array<std::array<std::array<GLTexture, 4>, 3>, 2> textures;
 
     for (int dim1 = 0; dim1 < 2; ++dim1)
     {
@@ -14362,7 +14559,7 @@ void main(void)
         GLColor(128, 0, 0, 0), GLColor(136, 0, 0, 0), GLColor(144, 0, 0, 0), GLColor(152, 0, 0, 0),
         GLColor(160, 0, 0, 0), GLColor(168, 0, 0, 0), GLColor(176, 0, 0, 0), GLColor(184, 0, 0, 0),
     };
-    GLTexture textures[2][3][4];
+    std::array<std::array<std::array<GLTexture, 4>, 3>, 2> textures;
 
     for (int dim1 = 0; dim1 < 2; ++dim1)
     {
@@ -14492,7 +14689,7 @@ void main(void)
         GLColor(2, 0, 0, 0), GLColor(0, 0, 0, 0), GLColor(1, 0, 0, 0),
         GLColor(1, 0, 0, 0), GLColor(2, 0, 0, 0), GLColor(0, 0, 0, 0),
     };
-    GLTexture textures[2][3];
+    std::array<std::array<GLTexture, 3>, 2> textures;
 
     for (int dim1 = 0; dim1 < 2; ++dim1)
     {
@@ -22257,10 +22454,10 @@ TEST_P(GLSLTest_ES3, UnderscoresWorkWithOutArrays)
     GLFramebuffer fbo;
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
 
-    GLTexture textures[4];
-    for (size_t texIndex = 0; texIndex < ArraySize(textures); texIndex++)
+    std::array<GLTexture, 4> textures;
+    for (GLTexture &texture : textures)
     {
-        glBindTexture(GL_TEXTURE_2D, textures[texIndex]);
+        glBindTexture(GL_TEXTURE_2D, texture);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, getWindowWidth(), getWindowHeight(), 0, GL_RGBA,
                      GL_UNSIGNED_BYTE, nullptr);
     }

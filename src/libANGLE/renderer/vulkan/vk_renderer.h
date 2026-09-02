@@ -10,6 +10,7 @@
 #ifndef LIBANGLE_RENDERER_VULKAN_RENDERERVK_H_
 #define LIBANGLE_RENDERER_VULKAN_RENDERERVK_H_
 
+#include <array>
 #include <condition_variable>
 #include <deque>
 #include <memory>
@@ -59,7 +60,7 @@ struct SkippedSyncvalMessage
 {
     const char *messageId;
     bool isDueToNonConformantCoherentColorFramebufferFetch  = false;
-    const char *extraProperties[kMaxSyncValExtraProperties] = {};
+    std::array<const char *, kMaxSyncValExtraProperties> extraProperties = {};
 };
 
 class ImageMemorySuballocator : angle::NonCopyable
@@ -748,6 +749,10 @@ class Renderer : angle::NonCopyable
         const vk::ExtensionNameList &deviceExtensionNames,
         VkPhysicalDeviceFeatures2KHR *deviceFeatures,
         VkPhysicalDeviceProperties2 *deviceProperties);
+    void appendDeviceExtensionFeaturesPromotedTo14(
+        const vk::ExtensionNameList &deviceExtensionNames,
+        VkPhysicalDeviceFeatures2KHR *deviceFeatures,
+        VkPhysicalDeviceProperties2 *deviceProperties);
 
     angle::Result enableInstanceExtensions(vk::ErrorContext *context,
                                            const VulkanLayerVector &enabledInstanceLayerNames,
@@ -763,6 +768,7 @@ class Renderer : angle::NonCopyable
     void enableDeviceExtensionsPromotedTo11(const vk::ExtensionNameList &deviceExtensionNames);
     void enableDeviceExtensionsPromotedTo12(const vk::ExtensionNameList &deviceExtensionNames);
     void enableDeviceExtensionsPromotedTo13(const vk::ExtensionNameList &deviceExtensionNames);
+    void enableDeviceExtensionsPromotedTo14(const vk::ExtensionNameList &deviceExtensionNames);
 
     void initDeviceExtensionEntryPoints();
     // Initialize extension entry points from core ones if needed
@@ -854,12 +860,12 @@ class Renderer : angle::NonCopyable
 
     VkPhysicalDeviceIDProperties mPhysicalDeviceIDProperties;
     VkPhysicalDeviceFeatures mPhysicalDeviceFeatures;
-    VkPhysicalDeviceLineRasterizationFeaturesEXT mLineRasterizationFeatures;
+    VkPhysicalDeviceLineRasterizationFeatures mLineRasterizationFeatures;
     VkPhysicalDeviceProvokingVertexFeaturesEXT mProvokingVertexFeatures;
-    VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT mVertexAttributeDivisorFeatures;
-    VkPhysicalDeviceVertexAttributeDivisorPropertiesEXT mVertexAttributeDivisorProperties;
+    VkPhysicalDeviceVertexAttributeDivisorFeatures mVertexAttributeDivisorFeatures;
+    VkPhysicalDeviceVertexAttributeDivisorProperties mVertexAttributeDivisorProperties;
     VkPhysicalDeviceTransformFeedbackFeaturesEXT mTransformFeedbackFeatures;
-    VkPhysicalDeviceIndexTypeUint8FeaturesEXT mIndexTypeUint8Features;
+    VkPhysicalDeviceIndexTypeUint8Features mIndexTypeUint8Features;
     VkPhysicalDeviceSubgroupProperties mSubgroupProperties;
     VkPhysicalDeviceShaderSubgroupExtendedTypesFeaturesKHR mSubgroupExtendedTypesFeatures;
     VkPhysicalDeviceDeviceMemoryReportFeaturesEXT mMemoryReportFeatures;
@@ -876,7 +882,7 @@ class Renderer : angle::NonCopyable
     VkPhysicalDeviceCustomBorderColorFeaturesEXT mCustomBorderColorFeatures;
     VkPhysicalDeviceProtectedMemoryFeatures mProtectedMemoryFeatures;
     VkPhysicalDeviceHostQueryResetFeaturesEXT mHostQueryResetFeatures;
-    VkPhysicalDeviceDepthClampZeroOneFeaturesEXT mDepthClampZeroOneFeatures;
+    VkPhysicalDeviceDepthClampZeroOneFeaturesKHR mDepthClampZeroOneFeatures;
     VkPhysicalDeviceDepthClipControlFeaturesEXT mDepthClipControlFeatures;
     VkPhysicalDeviceBlendOperationAdvancedFeaturesEXT mBlendOperationAdvancedFeatures;
     VkPhysicalDevicePrimitivesGeneratedQueryFeaturesEXT mPrimitivesGeneratedQueryFeatures;
@@ -903,8 +909,8 @@ class Renderer : angle::NonCopyable
     VkPhysicalDeviceLegacyDitheringFeaturesEXT mDitheringFeatures;
     VkPhysicalDeviceDrmPropertiesEXT mDrmProperties;
     VkPhysicalDeviceTimelineSemaphoreFeaturesKHR mTimelineSemaphoreFeatures;
-    VkPhysicalDeviceHostImageCopyFeaturesEXT mHostImageCopyFeatures;
-    VkPhysicalDeviceHostImageCopyPropertiesEXT mHostImageCopyProperties;
+    VkPhysicalDeviceHostImageCopyFeatures mHostImageCopyFeatures;
+    VkPhysicalDeviceHostImageCopyProperties mHostImageCopyProperties;
     VkPhysicalDeviceTextureCompressionASTCHDRFeaturesEXT mTextureCompressionASTCHDRFeatures;
     std::vector<VkImageLayout> mHostImageCopySrcLayoutsStorage;
     std::vector<VkImageLayout> mHostImageCopyDstLayoutsStorage;
@@ -928,7 +934,7 @@ class Renderer : angle::NonCopyable
     VkPhysicalDeviceShaderIntegerDotProductFeatures mShaderIntegerDotProductFeatures;
     VkPhysicalDeviceShaderIntegerDotProductProperties mShaderIntegerDotProductProperties;
     VkPhysicalDeviceShaderDemoteToHelperInvocationFeatures mShaderDemoteToHelperInvocationFeatures;
-    VkPhysicalDeviceGlobalPriorityQueryFeaturesEXT mPhysicalDeviceGlobalPriorityQueryFeatures;
+    VkPhysicalDeviceGlobalPriorityQueryFeatures mPhysicalDeviceGlobalPriorityQueryFeatures;
     VkPhysicalDeviceExternalMemoryHostPropertiesEXT mExternalMemoryHostProperties;
     VkPhysicalDeviceBufferDeviceAddressFeaturesKHR mBufferDeviceAddressFeatures;
     VkPhysicalDeviceShaderAtomicInt64Features mShaderAtomicInt64Features;
